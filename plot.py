@@ -5,7 +5,7 @@ import numpy as np
 from collections import deque
 import time
 
-SERIAL_PORT = 'COM5'  
+SERIAL_PORT = 'COM3'  
 BAUD_RATE = 115200
 MAX_DATA_POINTS = 100 
 
@@ -34,7 +34,7 @@ try:
             if not serial_line:
                 continue
 
-           
+            print(serial_line)
             line_str = serial_line.decode('utf-8').strip()
             
             
