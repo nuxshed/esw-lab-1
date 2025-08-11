@@ -44,10 +44,19 @@ try:
             if not serial_line:
                 continue
 
-            # Decode bytes to string and convert to float
-            # Assumes the Arduino sends a number followed by a newline, e.g., "15.4\n"
-            distance = float(serial_line.decode('utf-8').strip())
+            # Decode bytes to string, e.g., "Distance: 123.45 cm"
+            line_str = serial_line.decode('utf-8').strip()
             
+            # Extract the numeric part of the string
+            # This will handle formats like "Distance: 123.45 cm"
+            parts = line_str.split()
+            if len(parts) >= 2 and parts[0] == "Distance:":
+                distance_str = parts[1]
+                distance = float(distance_str)
+            else:
+                # Fallback for plain number format
+                distance = float(line_str)
+
             # Append the new data point
             data.append(distance)
 
@@ -66,7 +75,7 @@ try:
             
         except ValueError:
             # Handle cases where the data is not a valid number
-            print(f"Warning: Could not convert received data to float: '{serial_line.strip()}'")
+            print(f"Warning: Could not convert received data to float: '{line_str}'")
         except KeyboardInterrupt:
             # Allow clean exit with Ctrl+C
             print("Stopping plotter...")
@@ -78,13 +87,6 @@ try:
 except serial.SerialException as e:
     print(f"Error: Could not open serial port {SERIAL_PORT}. {e}")
     print("Please check the port name and make sure the device is connected.")
-    print("Available ports:")
-    ports = serial.tools.list_ports.comports()
-    if ports:
-        for port in ports:
-            print(f"  {port.device}: {port.description}")
-    else:
-        print("  No serial ports found.")
 except Exception as e:
     print(f"An unexpected error occurred: {e}")
 finally:
