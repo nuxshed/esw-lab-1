@@ -6,7 +6,7 @@ import statistics
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                              QWidget, QPushButton, QComboBox, QLineEdit, QTextEdit,
                              QLabel, QMessageBox, QGroupBox, QFormLayout, QSplitter)
-from PyQt6.QtCore import QThread, pyqtSignal, QObject, Qt
+from PyQt6.QtCore import QThread, pyqtSignal, QObject, Qt, QTimer
 from PyQt6.QtCharts import QChart, QChartView, QSplineSeries, QValueAxis
 from PyQt6.QtGui import QPainter, QFont
 
@@ -58,6 +58,7 @@ class SerialMonitorApp(QMainWindow):
         self.serial_worker = None
         self.is_connected = False
         self.data_point_counter = 0
+        self.current_port_devices = set()
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -105,10 +106,6 @@ class SerialMonitorApp(QMainWindow):
         self.baud_input = QLineEdit("115200")
         self.connection_layout.addRow("Baud Rate:", self.baud_input)
 
-        self.refresh_button = QPushButton("Refresh Ports")
-        self.refresh_button.clicked.connect(self.populate_ports)
-        self.connection_layout.addRow(self.refresh_button)
-
         self.manual_port_input = QLineEdit()
         self.manual_port_input.setPlaceholderText("e.g., /dev/ttyACM0")
         self.add_port_button = QPushButton("Add")
@@ -155,16 +152,34 @@ class SerialMonitorApp(QMainWindow):
         self.main_layout.addWidget(self.left_panel, 1) 
         self.main_layout.addWidget(self.right_panel, 0)
 
+        self.port_refresh_timer = QTimer(self)
+        self.port_refresh_timer.setInterval(1000)
+        self.port_refresh_timer.timeout.connect(self.populate_ports)
+        self.port_refresh_timer.start()
+
         self.populate_ports()
 
     def populate_ports(self):
-        self.port_combo.clear()
         ports = serial.tools.list_ports.comports()
-        if not ports:
-            self.port_combo.addItem("No ports found")
-        else:
-            for port in sorted(ports):
-                self.port_combo.addItem(f"{port.device}: {port.description}", userData=port)
+        new_port_devices = {p.device for p in ports}
+
+        if new_port_devices != self.current_port_devices:
+            self.current_port_devices = new_port_devices
+            current_selection = self.port_combo.currentData()
+            
+            self.port_combo.clear()
+            
+            if not ports:
+                self.port_combo.addItem("No ports found")
+            else:
+                for port in sorted(ports):
+                    self.port_combo.addItem(f"{port.device}: {port.description}", userData=port)
+
+            if current_selection:
+                for i in range(self.port_combo.count()):
+                    if self.port_combo.itemData(i) and self.port_combo.itemData(i).device == current_selection.device:
+                        self.port_combo.setCurrentIndex(i)
+                        break
 
     def add_manual_port(self):
         port_name = self.manual_port_input.text().strip()
@@ -188,6 +203,8 @@ class SerialMonitorApp(QMainWindow):
                 QMessageBox.warning(self, "Connection Error", "No serial port selected.")
                 return
             port_info = self.port_combo.itemData(current_index)
+            if not port_info: return
+            
             port_device = port_info.device
             try:
                 baud_rate = int(self.baud_input.text())
@@ -199,6 +216,7 @@ class SerialMonitorApp(QMainWindow):
             self.stop_serial_thread()
 
     def start_serial_thread(self, port, baud_rate):
+        self.port_refresh_timer.stop()
         self.clear_graph_and_log()
         self.axis_y.setRange(0, 50)
         
@@ -230,6 +248,7 @@ class SerialMonitorApp(QMainWindow):
         self.status_label.setText("Status: Disconnected")
         self.clear_button.setEnabled(False)
         self.connection_group.setEnabled(True)
+        self.port_refresh_timer.start()
 
     def append_data(self, data):
         self.data_display.append(data)
@@ -307,8 +326,8 @@ QMainWindow {
     background-color: #2e3440;
 }
 QGroupBox {
-    background-color: #3b4252;
-    border: 1px solid #4c566a;
+    background-color: transparent;
+    border: 1px solid #434c5e;
     border-radius: 5px;
     margin-top: 1ex;
     font-weight: bold;
@@ -321,14 +340,20 @@ QGroupBox::title {
 QLabel {
     color: #eceff4;
 }
-QLineEdit, QComboBox, QTextEdit {
-    background-color: #434c5e;
-    border: 1px solid #4c566a;
-    border-radius: 4px;
+QLineEdit, QComboBox {
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid #4c566a;
+    border-radius: 0px;
     padding: 5px;
     color: #d8dee9;
 }
 QTextEdit {
+    background-color: transparent;
+    border: 1px solid #434c5e;
+    border-radius: 4px;
+    padding: 5px;
+    color: #d8dee9;
     font-family: Monospace;
 }
 QPushButton {
