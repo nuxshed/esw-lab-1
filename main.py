@@ -64,9 +64,13 @@ class SerialMonitorApp(QMainWindow):
         self.setCentralWidget(self.central_widget)
         
         self.main_layout = QHBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        self.main_layout.setSpacing(10)
 
         self.left_panel = QWidget()
         self.left_layout = QVBoxLayout(self.left_panel)
+        self.left_layout.setContentsMargins(0, 0, 0, 0)
+        self.left_panel.setLayout(self.left_layout)
 
         self.chart = QChart()
         self.chart.setTitle("Real-Time Distance Measurement")
@@ -94,11 +98,14 @@ class SerialMonitorApp(QMainWindow):
         self.left_layout.addWidget(self.splitter)
 
         self.right_panel = QWidget()
-        self.right_panel.setFixedWidth(280)
+        self.right_panel.setFixedWidth(300)
         self.right_layout = QVBoxLayout(self.right_panel)
+        self.right_layout.setSpacing(15)
         
         self.connection_group = QGroupBox("Connection Settings")
         self.connection_layout = QFormLayout()
+        self.connection_layout.setContentsMargins(10, 20, 10, 10)
+        self.connection_layout.setVerticalSpacing(12)
         
         self.port_combo = QComboBox()
         self.connection_layout.addRow("COM Port:", self.port_combo)
@@ -119,6 +126,8 @@ class SerialMonitorApp(QMainWindow):
 
         self.controls_group = QGroupBox("Controls")
         self.controls_layout = QVBoxLayout()
+        self.controls_layout.setContentsMargins(10, 10, 10, 10)
+        self.controls_layout.setSpacing(10)
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self.toggle_connection)
         self.clear_button = QPushButton("Clear")
@@ -130,6 +139,8 @@ class SerialMonitorApp(QMainWindow):
 
         self.stats_group = QGroupBox("Statistics")
         self.stats_layout = QFormLayout()
+        self.stats_layout.setContentsMargins(10, 20, 10, 10)
+        self.stats_layout.setVerticalSpacing(12)
         self.avg_label = QLabel("N/A")
         self.min_label = QLabel("N/A")
         self.max_label = QLabel("N/A")
@@ -148,6 +159,7 @@ class SerialMonitorApp(QMainWindow):
         self.right_layout.addWidget(self.stats_group)
         self.right_layout.addWidget(self.status_label)
         self.right_layout.addStretch()
+        self.right_panel.setLayout(self.right_layout)
 
         self.main_layout.addWidget(self.left_panel, 1) 
         self.main_layout.addWidget(self.right_panel, 0)
@@ -165,7 +177,7 @@ class SerialMonitorApp(QMainWindow):
 
         if new_port_devices != self.current_port_devices:
             self.current_port_devices = new_port_devices
-            current_selection = self.port_combo.currentData()
+            current_selection_data = self.port_combo.currentData()
             
             self.port_combo.clear()
             
@@ -175,9 +187,10 @@ class SerialMonitorApp(QMainWindow):
                 for port in sorted(ports):
                     self.port_combo.addItem(f"{port.device}: {port.description}", userData=port)
 
-            if current_selection:
+            if current_selection_data:
                 for i in range(self.port_combo.count()):
-                    if self.port_combo.itemData(i) and self.port_combo.itemData(i).device == current_selection.device:
+                    item_data = self.port_combo.itemData(i)
+                    if item_data and item_data.device == current_selection_data.device:
                         self.port_combo.setCurrentIndex(i)
                         break
 
@@ -320,7 +333,7 @@ QWidget {
     background-color: #2e3440;
     color: #d8dee9;
     font-family: Arial, sans-serif;
-    font-size: 10pt;
+    font-size: 11pt;
 }
 QMainWindow {
     background-color: #2e3440;
@@ -329,13 +342,13 @@ QGroupBox {
     background-color: transparent;
     border: 1px solid #434c5e;
     border-radius: 5px;
-    margin-top: 1ex;
+    margin-top: 2ex;
     font-weight: bold;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top center;
-    padding: 0 3px;
+    padding: 0 5px;
 }
 QLabel {
     color: #eceff4;
@@ -361,7 +374,7 @@ QPushButton {
     color: #eceff4;
     border: none;
     border-radius: 4px;
-    padding: 8px 12px;
+    padding: 10px;
     font-weight: bold;
 }
 QPushButton:hover {
