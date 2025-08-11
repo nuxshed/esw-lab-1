@@ -1,11 +1,16 @@
 import sys
+import re
 import serial
 import serial.tools.list_ports
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                              QWidget, QPushButton, QComboBox, QLineEdit, QTextEdit,
-                             QLabel, QMessageBox)
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
+                             QLabel, QMessageBox, QGroupBox, QFormLayout, QSplitter)
+from PyQt6.QtCore import QThread, pyqtSignal, QObject, Qt
+from PyQt6.QtCharts import QChart, QChartView, QSplineSeries, QValueAxis
+from PyQt6.QtGui import QPainter, QFont
 
+# This Worker class will handle the serial port reading in a separate thread
+# to prevent the GUI from freezing.
 class SerialWorker(QObject):
     """
     Worker thread for reading from the serial port.
@@ -49,7 +54,7 @@ class SerialWorker(QObject):
 
     def stop(self):
         """
-        Stops the reading loop and closes the serial port.
+        Stops the reading loop.
         """
         self._is_running = False
 
@@ -57,145 +62,175 @@ class SerialWorker(QObject):
 class SerialMonitorApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Python Serial Monitor")
-        self.setGeometry(100, 100, 600, 450)
+        self.setWindowTitle("Python Serial Monitor with Real-Time Chart")
+        self.setGeometry(100, 100, 1000, 700) 
 
+        # --- Member variables ---
         self.serial_thread = None
         self.serial_worker = None
         self.is_connected = False
-        self.port_list = []
+        self.data_point_counter = 0
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        self.layout = QVBoxLayout(self.central_widget)
-
-        config_layout = QHBoxLayout()
         
-        self.port_label = QLabel("COM Port:")
-        self.port_combo = QComboBox()
-        config_layout.addWidget(self.port_label)
-        config_layout.addWidget(self.port_combo)
+        # --- Main Layout (Horizontal) ---
+        self.main_layout = QHBoxLayout(self.central_widget)
 
-        self.baud_label = QLabel("Baud Rate:")
-        self.baud_input = QLineEdit("9600")
-        config_layout.addWidget(self.baud_label)
-        config_layout.addWidget(self.baud_input)
-        
-        self.refresh_button = QPushButton("Refresh Ports")
-        self.refresh_button.clicked.connect(self.populate_ports)
-        config_layout.addWidget(self.refresh_button)
-        
-        self.layout.addLayout(config_layout)
+        # --- Left Panel (Chart and Log) ---
+        self.left_panel = QWidget()
+        self.left_layout = QVBoxLayout(self.left_panel)
 
-        manual_add_layout = QHBoxLayout()
-        self.manual_port_input = QLineEdit()
-        self.manual_port_input.setPlaceholderText("e.g., /dev/pts/3")
-        self.add_port_button = QPushButton("Add Manual Port")
-        self.add_port_button.clicked.connect(self.add_manual_port)
-        manual_add_layout.addWidget(QLabel("Manual Port:"))
-        manual_add_layout.addWidget(self.manual_port_input)
-        manual_add_layout.addWidget(self.add_port_button)
-        self.layout.addLayout(manual_add_layout)
+        # Chart Setup
+        self.chart = QChart()
+        self.chart.setTitle("Real-Time Distance Measurement")
+        self.series = QSplineSeries()
+        self.chart.addSeries(self.series)
+        self.axis_x = QValueAxis()
+        self.axis_y = QValueAxis()
+        self.axis_x.setLabelFormat("%i")
+        self.axis_x.setTitleText("Time (samples)")
+        self.axis_y.setTitleText("Distance (units)")
+        self.chart.addAxis(self.axis_x, Qt.AlignmentFlag.AlignBottom)
+        self.chart.addAxis(self.axis_y, Qt.AlignmentFlag.AlignLeft)
+        self.series.attachAxis(self.axis_x)
+        self.series.attachAxis(self.axis_y)
+        self.chart_view = QChartView(self.chart)
+        self.chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        self.connect_button = QPushButton("Connect")
-        self.connect_button.clicked.connect(self.toggle_connection)
-        self.layout.addWidget(self.connect_button)
-        
-        self.status_label = QLabel("Status: Disconnected")
-        self.layout.addWidget(self.status_label)
-
+        # Data Display Area
         self.data_display = QTextEdit()
         self.data_display.setReadOnly(True)
-        self.layout.addWidget(self.data_display)
+
+        # Resizable Splitter for Chart and Log
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.addWidget(self.chart_view)
+        self.splitter.addWidget(self.data_display)
+        self.splitter.setSizes([400, 200]) # Initial sizes
+        self.left_layout.addWidget(self.splitter)
+
+        # --- Right Panel (Controls) ---
+        self.right_panel = QWidget()
+        self.right_panel.setFixedWidth(280) # Fixed width for the control panel
+        self.right_layout = QVBoxLayout(self.right_panel)
+        
+        # Connection Settings Group
+        self.connection_group = QGroupBox("Connection Settings")
+        self.connection_layout = QFormLayout()
+        
+        self.port_combo = QComboBox()
+        self.connection_layout.addRow("COM Port:", self.port_combo)
+        
+        self.baud_input = QLineEdit("115200")
+        self.connection_layout.addRow("Baud Rate:", self.baud_input)
+
+        self.refresh_button = QPushButton("Refresh Ports")
+        self.refresh_button.clicked.connect(self.populate_ports)
+        self.connection_layout.addRow(self.refresh_button)
+
+        self.manual_port_input = QLineEdit()
+        self.manual_port_input.setPlaceholderText("e.g., /dev/ttyACM0")
+        self.add_port_button = QPushButton("Add")
+        self.add_port_button.clicked.connect(self.add_manual_port)
+        manual_port_layout = QHBoxLayout()
+        manual_port_layout.addWidget(self.manual_port_input)
+        manual_port_layout.addWidget(self.add_port_button)
+        self.connection_layout.addRow("Manual Port:", manual_port_layout)
+        
+        self.connection_group.setLayout(self.connection_layout)
+
+        # Controls Group
+        self.controls_group = QGroupBox("Controls")
+        self.controls_layout = QVBoxLayout()
+        self.connect_button = QPushButton("Connect")
+        self.connect_button.clicked.connect(self.toggle_connection)
+        self.reset_view_button = QPushButton("Reset View")
+        self.reset_view_button.clicked.connect(self.reset_chart_view)
+        self.reset_view_button.setEnabled(False)
+        self.controls_layout.addWidget(self.connect_button)
+        self.controls_layout.addWidget(self.reset_view_button)
+        self.controls_group.setLayout(self.controls_layout)
+
+        # Status Label
+        self.status_label = QLabel("Status: Disconnected")
+        self.status_label.setWordWrap(True)
+
+        self.right_layout.addWidget(self.connection_group)
+        self.right_layout.addWidget(self.controls_group)
+        self.right_layout.addWidget(self.status_label)
+        self.right_layout.addStretch() # Pushes everything to the top
+
+        # Add panels to main layout
+        self.main_layout.addWidget(self.left_panel, 1) # Give left panel more stretch factor
+        self.main_layout.addWidget(self.right_panel, 0)
 
         self.populate_ports()
 
     def populate_ports(self):
-        """
-        Scans for available serial ports and adds them to the dropdown.
-        """
         self.port_combo.clear()
-        self.port_list = serial.tools.list_ports.comports()
-        
-        if not self.port_list:
+        ports = serial.tools.list_ports.comports()
+        if not ports:
             self.port_combo.addItem("No ports found")
         else:
-            for port in sorted(self.port_list):
-                description = f"{port.device}: {port.description}"
-                self.port_combo.addItem(description, userData=port)
+            for port in sorted(ports):
+                self.port_combo.addItem(f"{port.device}: {port.description}", userData=port)
 
     def add_manual_port(self):
-        """
-        Adds a port from the manual input field to the dropdown list.
-        """
         port_name = self.manual_port_input.text().strip()
         if not port_name:
             QMessageBox.warning(self, "Input Error", "Manual port name cannot be empty.")
             return
-
+        
         class MockPortInfo:
             def __init__(self, device):
-                self.device = device
-                self.description = "Manually Added Port"
-
-        mock_port = MockPortInfo(port_name)
-        self.port_list.append(mock_port)
+                self.device = device; self.description = "Manually Added"
         
-        description = f"{mock_port.device}: {mock_port.description}"
-        self.port_combo.addItem(description, userData=mock_port)
+        mock_port = MockPortInfo(port_name)
+        self.port_combo.addItem(f"{mock_port.device}: {mock_port.description}", userData=mock_port)
         self.port_combo.setCurrentIndex(self.port_combo.count() - 1)
         self.manual_port_input.clear()
 
-
     def toggle_connection(self):
-        """
-        Handles the logic for connecting to and disconnecting from the serial port.
-        """
         if not self.is_connected:
             current_index = self.port_combo.currentIndex()
             if current_index == -1 or "No ports found" in self.port_combo.currentText():
                 QMessageBox.warning(self, "Connection Error", "No serial port selected.")
                 return
-
             port_info = self.port_combo.itemData(current_index)
-            if not port_info:
-                 port_device = self.port_combo.currentText()
-            else:
-                 port_device = port_info.device
-            
-            baud_rate_text = self.baud_input.text()
-
+            port_device = port_info.device
             try:
-                baud_rate = int(baud_rate_text)
+                baud_rate = int(self.baud_input.text())
             except ValueError:
-                QMessageBox.warning(self, "Input Error", "Please enter a valid integer for the baud rate.")
+                QMessageBox.warning(self, "Input Error", "Please enter a valid integer baud rate.")
                 return
-
             self.start_serial_thread(port_device, baud_rate)
         else:
             self.stop_serial_thread()
 
     def start_serial_thread(self, port, baud_rate):
+        self.series.clear()
+        self.data_point_counter = 0
+        self.axis_x.setRange(0, 50) 
+        self.axis_y.setRange(0, 50)
+        
         self.serial_worker = SerialWorker(port, baud_rate)
         self.serial_thread = QThread()
         self.serial_worker.moveToThread(self.serial_thread)
+        
         self.serial_thread.started.connect(self.serial_worker.run)
         self.serial_worker.finished.connect(self.serial_thread.quit)
         self.serial_worker.finished.connect(self.serial_worker.deleteLater)
         self.serial_thread.finished.connect(self.serial_thread.deleteLater)
         self.serial_worker.data_received.connect(self.append_data)
         self.serial_worker.error.connect(self.on_serial_error)
+        
         self.serial_thread.start()
         
         self.is_connected = True
         self.connect_button.setText("Disconnect")
-        self.status_label.setText(f"Status: Connected to {port} at {baud_rate} baud")
-        self.port_combo.setEnabled(False)
-        self.baud_input.setEnabled(False)
-        self.refresh_button.setEnabled(False)
-        self.manual_port_input.setEnabled(False)
-        self.add_port_button.setEnabled(False)
-
+        self.status_label.setText(f"Status: Connected to {port} @ {baud_rate} baud")
+        self.reset_view_button.setEnabled(True)
+        self.connection_group.setEnabled(False)
 
     def stop_serial_thread(self):
         if self.serial_worker:
@@ -204,15 +239,38 @@ class SerialMonitorApp(QMainWindow):
         self.is_connected = False
         self.connect_button.setText("Connect")
         self.status_label.setText("Status: Disconnected")
-        self.port_combo.setEnabled(True)
-        self.baud_input.setEnabled(True)
-        self.refresh_button.setEnabled(True)
-        self.manual_port_input.setEnabled(True)
-        self.add_port_button.setEnabled(True)
-
+        self.reset_view_button.setEnabled(False)
+        self.connection_group.setEnabled(True)
 
     def append_data(self, data):
         self.data_display.append(data)
+        
+        # This regex supports integers and floats for the "Distance" value
+        match = re.search(r'^Distance:\s*(\d*\.?\d+)', data)
+        if match:
+            try:
+                value = float(match.group(1))
+                self.series.append(self.data_point_counter, value)
+                if self.series.count() > 50:
+                    self.series.remove(0)
+                    self.axis_x.setRange(self.data_point_counter - 49, self.data_point_counter)
+                current_min_y = self.axis_y.min()
+                current_max_y = self.axis_y.max()
+                if value > current_max_y: self.axis_y.setMax(value + 1)
+                if value < current_min_y: self.axis_y.setMin(value - 1)
+                self.data_point_counter += 1
+            except (ValueError, IndexError): pass
+
+    def reset_chart_view(self):
+        if self.series.count() > 0:
+            points = self.series.pointsVector()
+            min_y = min(p.y() for p in points)
+            max_y = max(p.y() for p in points)
+            buffer = (max_y - min_y) * 0.1
+            if buffer == 0: buffer = 5
+            self.axis_y.setRange(min_y - buffer, max_y + buffer)
+        else:
+            self.axis_y.setRange(0, 50)
 
     def on_serial_error(self, error_message):
         QMessageBox.critical(self, "Serial Port Error", error_message)
@@ -222,18 +280,81 @@ class SerialMonitorApp(QMainWindow):
         self.stop_serial_thread()
         event.accept()
 
+# --- Application Stylesheet (Dark Theme) ---
+STYLESHEET = """
+QWidget {
+    background-color: #2e3440;
+    color: #d8dee9;
+    font-family: Arial, sans-serif;
+    font-size: 10pt;
+}
+QMainWindow {
+    background-color: #2e3440;
+}
+QGroupBox {
+    background-color: #3b4252;
+    border: 1px solid #4c566a;
+    border-radius: 5px;
+    margin-top: 1ex; /* leave space at the top for the title */
+    font-weight: bold;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top center;
+    padding: 0 3px;
+}
+QLabel {
+    color: #eceff4;
+}
+QLineEdit, QComboBox, QTextEdit {
+    background-color: #434c5e;
+    border: 1px solid #4c566a;
+    border-radius: 4px;
+    padding: 5px;
+    color: #d8dee9;
+}
+QTextEdit {
+    font-family: Monospace;
+}
+QPushButton {
+    background-color: #5e81ac;
+    color: #eceff4;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-weight: bold;
+}
+QPushButton:hover {
+    background-color: #81a1c1;
+}
+QPushButton:pressed {
+    background-color: #88c0d0;
+}
+QPushButton:disabled {
+    background-color: #4c566a;
+    color: #d8dee9;
+}
+QComboBox::drop-down {
+    border: none;
+}
+QMessageBox {
+    background-color: #3b4252;
+}
+QChart {
+    background-color: transparent;
+}
+"""
 
 if __name__ == "__main__":
     try:
-        from PyQt6.QtWidgets import QApplication
-        import serial
-    except ImportError as e:
-        print(f"Error: A required library is missing: {e.name}")
-        print("Please install the necessary packages by running:")
-        print("pip install pyserial pyqt6")
+        from PyQt6.QtCharts import QChart
+    except ImportError:
+        print("Error: PyQt6-Charts is not installed.")
+        print("Please install it by running: pip install PyQt6-Charts")
         sys.exit(1)
 
     app = QApplication(sys.argv)
+    app.setStyleSheet(STYLESHEET) # Apply the custom theme
     main_window = SerialMonitorApp()
     main_window.show()
     sys.exit(app.exec())
