@@ -1,10 +1,15 @@
 import serial
+import serial.tools.list_ports
 import matplotlib.pyplot as plt
 import numpy as np
 from collections import deque
 import time
 
 # --- Configuration ---
+# On Linux, if you get a "Permission denied" error, you may need to add your user
+# to the 'dialout' group by running this command in your terminal:
+#   sudo usermod -a -G dialout $USER
+# After running the command, you must log out and log back in for the change to take effect.
 SERIAL_PORT = '/dev/ttyUSB0'  # Change this to your Arduino/ESP32 port
 BAUD_RATE = 115200
 MAX_DATA_POINTS = 100  # Number of data points to display on the plot
@@ -73,6 +78,13 @@ try:
 except serial.SerialException as e:
     print(f"Error: Could not open serial port {SERIAL_PORT}. {e}")
     print("Please check the port name and make sure the device is connected.")
+    print("Available ports:")
+    ports = serial.tools.list_ports.comports()
+    if ports:
+        for port in ports:
+            print(f"  {port.device}: {port.description}")
+    else:
+        print("  No serial ports found.")
 except Exception as e:
     print(f"An unexpected error occurred: {e}")
 finally:
