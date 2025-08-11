@@ -3,8 +3,8 @@ import time
 import random
 import sys
 
-# --- Configuration ---
-MOCK_PORT_NAME = "/dev/pts/2" # CHANGE THIS if your port is different
+
+MOCK_PORT_NAME = "/dev/pts/2" 
 
 BAUD_RATE = 9600
 

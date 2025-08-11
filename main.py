@@ -9,8 +9,6 @@ from PyQt6.QtCore import QThread, pyqtSignal, QObject, Qt
 from PyQt6.QtCharts import QChart, QChartView, QSplineSeries, QValueAxis
 from PyQt6.QtGui import QPainter, QFont
 
-# This Worker class will handle the serial port reading in a separate thread
-# to prevent the GUI from freezing.
 class SerialWorker(QObject):
     """
     Worker thread for reading from the serial port.
@@ -65,7 +63,7 @@ class SerialMonitorApp(QMainWindow):
         self.setWindowTitle("Python Serial Monitor with Real-Time Chart")
         self.setGeometry(100, 100, 1000, 700) 
 
-        # --- Member variables ---
+
         self.serial_thread = None
         self.serial_worker = None
         self.is_connected = False
@@ -74,14 +72,11 @@ class SerialMonitorApp(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         
-        # --- Main Layout (Horizontal) ---
         self.main_layout = QHBoxLayout(self.central_widget)
 
-        # --- Left Panel (Chart and Log) ---
         self.left_panel = QWidget()
         self.left_layout = QVBoxLayout(self.left_panel)
 
-        # Chart Setup
         self.chart = QChart()
         self.chart.setTitle("Real-Time Distance Measurement")
         self.series = QSplineSeries()
@@ -98,23 +93,19 @@ class SerialMonitorApp(QMainWindow):
         self.chart_view = QChartView(self.chart)
         self.chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Data Display Area
         self.data_display = QTextEdit()
         self.data_display.setReadOnly(True)
 
-        # Resizable Splitter for Chart and Log
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         self.splitter.addWidget(self.chart_view)
         self.splitter.addWidget(self.data_display)
-        self.splitter.setSizes([400, 200]) # Initial sizes
+        self.splitter.setSizes([400, 200])
         self.left_layout.addWidget(self.splitter)
 
-        # --- Right Panel (Controls) ---
         self.right_panel = QWidget()
-        self.right_panel.setFixedWidth(280) # Fixed width for the control panel
+        self.right_panel.setFixedWidth(280) 
         self.right_layout = QVBoxLayout(self.right_panel)
-        
-        # Connection Settings Group
+
         self.connection_group = QGroupBox("Connection Settings")
         self.connection_layout = QFormLayout()
         
@@ -139,7 +130,6 @@ class SerialMonitorApp(QMainWindow):
         
         self.connection_group.setLayout(self.connection_layout)
 
-        # Controls Group
         self.controls_group = QGroupBox("Controls")
         self.controls_layout = QVBoxLayout()
         self.connect_button = QPushButton("Connect")
@@ -151,17 +141,15 @@ class SerialMonitorApp(QMainWindow):
         self.controls_layout.addWidget(self.reset_view_button)
         self.controls_group.setLayout(self.controls_layout)
 
-        # Status Label
         self.status_label = QLabel("Status: Disconnected")
         self.status_label.setWordWrap(True)
 
         self.right_layout.addWidget(self.connection_group)
         self.right_layout.addWidget(self.controls_group)
         self.right_layout.addWidget(self.status_label)
-        self.right_layout.addStretch() # Pushes everything to the top
+        self.right_layout.addStretch() 
 
-        # Add panels to main layout
-        self.main_layout.addWidget(self.left_panel, 1) # Give left panel more stretch factor
+        self.main_layout.addWidget(self.left_panel, 1) 
         self.main_layout.addWidget(self.right_panel, 0)
 
         self.populate_ports()
@@ -245,7 +233,7 @@ class SerialMonitorApp(QMainWindow):
     def append_data(self, data):
         self.data_display.append(data)
         
-        # This regex supports integers and floats for the "Distance" value
+        
         match = re.search(r'^Distance:\s*(\d*\.?\d+)', data)
         if match:
             try:
@@ -280,7 +268,7 @@ class SerialMonitorApp(QMainWindow):
         self.stop_serial_thread()
         event.accept()
 
-# --- Application Stylesheet (Dark Theme) ---
+
 STYLESHEET = """
 QWidget {
     background-color: #2e3440;
@@ -354,7 +342,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     app = QApplication(sys.argv)
-    app.setStyleSheet(STYLESHEET) # Apply the custom theme
+    app.setStyleSheet(STYLESHEET)
     main_window = SerialMonitorApp()
     main_window.show()
     sys.exit(app.exec())
