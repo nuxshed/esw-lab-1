@@ -2,6 +2,7 @@ import sys
 import re
 import serial
 import serial.tools.list_ports
+import statistics
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                              QWidget, QPushButton, QComboBox, QLineEdit, QTextEdit,
                              QLabel, QMessageBox, QGroupBox, QFormLayout, QSplitter)
@@ -10,10 +11,6 @@ from PyQt6.QtCharts import QChart, QChartView, QSplineSeries, QValueAxis
 from PyQt6.QtGui import QPainter, QFont
 
 class SerialWorker(QObject):
-    """
-    Worker thread for reading from the serial port.
-    Emits a signal with the data received.
-    """
     data_received = pyqtSignal(str)
     finished = pyqtSignal()
     error = pyqtSignal(str)
@@ -26,9 +23,6 @@ class SerialWorker(QObject):
         self._is_running = True
 
     def run(self):
-        """
-        Connects to the serial port and reads data continuously.
-        """
         try:
             self.serial_port = serial.Serial(self.port, self.baudrate, timeout=1)
         except serial.SerialException as e:
@@ -51,9 +45,6 @@ class SerialWorker(QObject):
         self.finished.emit()
 
     def stop(self):
-        """
-        Stops the reading loop.
-        """
         self._is_running = False
 
 
@@ -62,7 +53,6 @@ class SerialMonitorApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Python Serial Monitor with Real-Time Chart")
         self.setGeometry(100, 100, 1000, 700) 
-
 
         self.serial_thread = None
         self.serial_worker = None
@@ -103,9 +93,9 @@ class SerialMonitorApp(QMainWindow):
         self.left_layout.addWidget(self.splitter)
 
         self.right_panel = QWidget()
-        self.right_panel.setFixedWidth(280) 
+        self.right_panel.setFixedWidth(280)
         self.right_layout = QVBoxLayout(self.right_panel)
-
+        
         self.connection_group = QGroupBox("Connection Settings")
         self.connection_layout = QFormLayout()
         
@@ -134,20 +124,33 @@ class SerialMonitorApp(QMainWindow):
         self.controls_layout = QVBoxLayout()
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self.toggle_connection)
-        self.reset_view_button = QPushButton("Reset View")
-        self.reset_view_button.clicked.connect(self.reset_chart_view)
-        self.reset_view_button.setEnabled(False)
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.clicked.connect(self.clear_graph_and_log)
+        self.clear_button.setEnabled(False)
         self.controls_layout.addWidget(self.connect_button)
-        self.controls_layout.addWidget(self.reset_view_button)
+        self.controls_layout.addWidget(self.clear_button)
         self.controls_group.setLayout(self.controls_layout)
+
+        self.stats_group = QGroupBox("Statistics")
+        self.stats_layout = QFormLayout()
+        self.avg_label = QLabel("N/A")
+        self.min_label = QLabel("N/A")
+        self.max_label = QLabel("N/A")
+        self.stdev_label = QLabel("N/A")
+        self.stats_layout.addRow("Average:", self.avg_label)
+        self.stats_layout.addRow("Minimum:", self.min_label)
+        self.stats_layout.addRow("Maximum:", self.max_label)
+        self.stats_layout.addRow("Std Dev:", self.stdev_label)
+        self.stats_group.setLayout(self.stats_layout)
 
         self.status_label = QLabel("Status: Disconnected")
         self.status_label.setWordWrap(True)
 
         self.right_layout.addWidget(self.connection_group)
         self.right_layout.addWidget(self.controls_group)
+        self.right_layout.addWidget(self.stats_group)
         self.right_layout.addWidget(self.status_label)
-        self.right_layout.addStretch() 
+        self.right_layout.addStretch()
 
         self.main_layout.addWidget(self.left_panel, 1) 
         self.main_layout.addWidget(self.right_panel, 0)
@@ -196,9 +199,7 @@ class SerialMonitorApp(QMainWindow):
             self.stop_serial_thread()
 
     def start_serial_thread(self, port, baud_rate):
-        self.series.clear()
-        self.data_point_counter = 0
-        self.axis_x.setRange(0, 50) 
+        self.clear_graph_and_log()
         self.axis_y.setRange(0, 50)
         
         self.serial_worker = SerialWorker(port, baud_rate)
@@ -217,7 +218,7 @@ class SerialMonitorApp(QMainWindow):
         self.is_connected = True
         self.connect_button.setText("Disconnect")
         self.status_label.setText(f"Status: Connected to {port} @ {baud_rate} baud")
-        self.reset_view_button.setEnabled(True)
+        self.clear_button.setEnabled(True)
         self.connection_group.setEnabled(False)
 
     def stop_serial_thread(self):
@@ -227,12 +228,11 @@ class SerialMonitorApp(QMainWindow):
         self.is_connected = False
         self.connect_button.setText("Connect")
         self.status_label.setText("Status: Disconnected")
-        self.reset_view_button.setEnabled(False)
+        self.clear_button.setEnabled(False)
         self.connection_group.setEnabled(True)
 
     def append_data(self, data):
         self.data_display.append(data)
-        
         
         match = re.search(r'^Distance:\s*(\d*\.?\d+)', data)
         if match:
@@ -242,24 +242,51 @@ class SerialMonitorApp(QMainWindow):
                 if self.series.count() > 50:
                     self.series.remove(0)
                     self.axis_x.setRange(self.data_point_counter - 49, self.data_point_counter)
+                
                 current_min_y = self.axis_y.min()
                 current_max_y = self.axis_y.max()
                 if value > current_max_y: self.axis_y.setMax(value + 1)
                 if value < current_min_y: self.axis_y.setMin(value - 1)
+
                 self.data_point_counter += 1
+                self.update_statistics()
             except (ValueError, IndexError): pass
 
-    def reset_chart_view(self):
-        if self.series.count() > 0:
-            points = self.series.pointsVector()
-            min_y = min(p.y() for p in points)
-            max_y = max(p.y() for p in points)
-            buffer = (max_y - min_y) * 0.1
-            if buffer == 0: buffer = 5
-            self.axis_y.setRange(min_y - buffer, max_y + buffer)
-        else:
-            self.axis_y.setRange(0, 50)
+    def clear_graph_and_log(self):
+        self.series.clear()
+        self.data_display.clear()
+        self.data_point_counter = 0
+        self.axis_x.setRange(0, 50)
+        self.reset_stats_labels()
 
+    def reset_stats_labels(self):
+        self.avg_label.setText("N/A")
+        self.min_label.setText("N/A")
+        self.max_label.setText("N/A")
+        self.stdev_label.setText("N/A")
+
+    def update_statistics(self):
+        points = self.series.points()
+        if not points:
+            self.reset_stats_labels()
+            return
+
+        y_values = [p.y() for p in points]
+        
+        min_val = min(y_values)
+        max_val = max(y_values)
+        avg_val = statistics.mean(y_values)
+        
+        if len(y_values) > 1:
+            stdev_val = statistics.stdev(y_values)
+        else:
+            stdev_val = 0
+
+        self.min_label.setText(f"{min_val:.2f}")
+        self.max_label.setText(f"{max_val:.2f}")
+        self.avg_label.setText(f"{avg_val:.2f}")
+        self.stdev_label.setText(f"{stdev_val:.2f}")
+        
     def on_serial_error(self, error_message):
         QMessageBox.critical(self, "Serial Port Error", error_message)
         self.stop_serial_thread()
@@ -283,7 +310,7 @@ QGroupBox {
     background-color: #3b4252;
     border: 1px solid #4c566a;
     border-radius: 5px;
-    margin-top: 1ex; /* leave space at the top for the title */
+    margin-top: 1ex;
     font-weight: bold;
 }
 QGroupBox::title {
